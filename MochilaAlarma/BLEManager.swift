@@ -61,6 +61,17 @@ extension BLEManager: CBCentralManagerDelegate {
         peripheral.delegate = self
         peripheral.discoverServices([serviceUUID])
     }
+
+    func centralManager(_ central: CBCentralManager,
+                        didDisconnectPeripheral peripheral: CBPeripheral,
+                        error: Error?) {
+        DispatchQueue.main.async {
+            self.connected = false
+            self.status = "DESCONECTADO"
+        }
+        // Reintentar conexión
+        central.scanForPeripherals(withServices: nil)
+    }
 }
 
 extension BLEManager: CBPeripheralDelegate {
