@@ -37,7 +37,10 @@ extension BLEManager: CBCentralManagerDelegate {
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         if central.state == .poweredOn {
-            central.scanForPeripherals(withServices: nil)
+            status = "BUSCANDO..."
+            central.scanForPeripherals(withServices: [serviceUUID], options: nil)
+        } else {
+            status = "BLUETOOTH APAGADO"
         }
     }
 
@@ -46,16 +49,21 @@ extension BLEManager: CBCentralManagerDelegate {
                         advertisementData: [String : Any],
                         rssi RSSI: NSNumber) {
 
+        print("Descubierto: \(peripheral.name ?? "sin nombre") - RSSI: \(RSSI)")
+        
         if peripheral.name == "Mochila-Alarma" {
+            print("Encontrado Mochila-Alarma!")
             self.peripheral = peripheral
             central.stopScan()
-            central.connect(peripheral)
+            status = "CONECTANDO..."
+            central.connect(peripheral, options: nil)
         }
     }
 
     func centralManager(_ central: CBCentralManager,
                         didConnect peripheral: CBPeripheral) {
 
+        print("Conectado a Mochila-Alarma!")
         self.connected = true
         self.status = "CONECTADO"
         peripheral.delegate = self
@@ -65,12 +73,34 @@ extension BLEManager: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager,
                         didDisconnectPeripheral peripheral: CBPeripheral,
                         error: Error?) {
+        print("Desconectado del periférico")
         DispatchQueue.main.async {
             self.connected = false
             self.status = "DESCONECTADO"
         }
-        // Reintentar conexión
-        central.scanForPeripherals(withServices: nil)
+        // Reintentar después de 2 segundos
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            if central.state == .poweredOn {
+                self.status = "BUSCANDO..."
+                central.scanForPeripherals(withServices: [self.serviceUUID], options: nil)
+            }
+        }
+    }
+    
+    func centralManager(_ central: CBCentralManager,
+                        didFailToConnect peripheral: CBPeripheral,
+                        error: Error?) {
+        print("Error al conectar: \(error?.localizedDescription ?? "desconocido")")
+        DispatchQueue.main.async {
+            self.status = "ERROR CONEXIÓN"
+        }
+        // Reintentar
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            if central.state == .poweredOn {
+                self.status = "BUSCANDO..."
+                central.scanForPeripherals(withServices: [self.serviceUUID], options: nil)
+            }
+        }
     }
 }
 
