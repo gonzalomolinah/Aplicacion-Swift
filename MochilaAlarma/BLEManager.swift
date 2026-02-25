@@ -21,6 +21,10 @@ final class BLEManager: NSObject, ObservableObject {
     @Published var bluetoothReady: Bool = false
     @Published var lastError: String?
     @Published var isBusy: Bool = false
+    @Published var logs: [String] = []
+    @Published var lastRSSI: Int?
+
+    private let maxLogs = 250
 
     // MARK: - BLE
     private var central: CBCentralManager!
@@ -37,6 +41,22 @@ final class BLEManager: NSObject, ObservableObject {
     override init() {
         super.init()
         central = CBCentralManager(delegate: self, queue: nil)
+        addLog("BLEManager inicializado")
+    }
+
+    private func addLog(_ message: String) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        let line = "[\(formatter.string(from: Date()))] \(message)"
+        logs.insert(line, at: 0)
+        if logs.count > maxLogs {
+            logs.removeLast(logs.count - maxLogs)
+        }
+    }
+
+    func clearLogs() {
+        logs.removeAll()
+        addLog("Logs limpiados")
     }
 
     func start() {
@@ -49,24 +69,45 @@ final class BLEManager: NSObject, ObservableObject {
               let peripheral,
               let commandChar else {
             lastError = "No hay conexión BLE disponible."
+            addLog("No se pudo enviar '\(cmd)': sin conexión")
             return
         }
 
         isBusy = true
         lastError = nil
+        addLog("Enviando comando: \(cmd)")
 
         guard let data = cmd.data(using: .utf8) else {
             lastError = "No se pudo codificar el comando."
             isBusy = false
+            addLog("Error codificando comando: \(cmd)")
             return
         }
 
         peripheral.writeValue(data, for: commandChar, type: .withResponse)
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            if self.isBusy {
+                self.isBusy = false
+                self.lastError = "Timeout esperando respuesta del dispositivo"
+                self.addLog("Timeout de respuesta para comando: \(cmd)")
+            }
+        }
     }
 
     func reconnect() {
+        addLog("Reconexión manual solicitada")
         disconnectCurrentIfNeeded()
         startScanIfNeeded(force: true)
+    }
+
+    func requestStatus() {
+        sendCommand("STATUS")
+    }
+
+    func ping() {
+        sendCommand("PING")
     }
 
     private func disconnectCurrentIfNeeded() {
@@ -95,6 +136,7 @@ final class BLEManager: NSObject, ObservableObject {
         connected = false
         commandChar = nil
         lastError = nil
+        addLog("Iniciando escaneo BLE")
 
         // Escaneo amplio para no depender de un advertising incompleto.
         central.scanForPeripherals(
@@ -108,6 +150,7 @@ final class BLEManager: NSObject, ObservableObject {
             guard let self else { return }
             if self.central.isScanning, self.peripheral == nil {
                 self.status = ConnectionState.notFound.rawValue
+                self.addLog("No se encontró dispositivo en 10s; reintentando")
                 self.central.stopScan()
                 self.startScanIfNeeded(force: true)
             }
@@ -120,6 +163,7 @@ final class BLEManager: NSObject, ObservableObject {
 
         self.peripheral = peripheral
         status = ConnectionState.connecting.rawValue
+        addLog("Conectando a \(peripheral.name ?? "periférico BLE")")
         central.stopScan()
         central.connect(peripheral, options: nil)
     }
@@ -151,15 +195,18 @@ extension BLEManager: CBCentralManagerDelegate {
             switch central.state {
             case .poweredOn:
                 self.bluetoothReady = true
+                self.addLog("Bluetooth encendido")
                 self.startScanIfNeeded()
             case .poweredOff:
                 self.bluetoothReady = false
                 self.status = ConnectionState.bluetoothOff.rawValue
+                self.addLog("Bluetooth apagado")
                 self.disconnectCurrentIfNeeded()
             case .unauthorized:
                 self.bluetoothReady = false
                 self.status = "BLUETOOTH SIN PERMISO"
                 self.lastError = "Revisa permisos de Bluetooth en Ajustes."
+                self.addLog("Bluetooth sin permiso")
                 self.disconnectCurrentIfNeeded()
             case .unsupported:
                 self.bluetoothReady = false
@@ -178,8 +225,10 @@ extension BLEManager: CBCentralManagerDelegate {
                                     advertisementData: [String : Any],
                                     rssi RSSI: NSNumber) {
         Task { @MainActor in
+            self.lastRSSI = RSSI.intValue
             guard self.peripheral == nil else { return }
             if self.peripheralMatches(peripheral, advertisementData: advertisementData) {
+                self.addLog("Dispositivo detectado (RSSI: \(RSSI))")
                 self.connect(to: peripheral)
             }
         }
@@ -191,6 +240,7 @@ extension BLEManager: CBCentralManagerDelegate {
             self.connected = true
             self.status = ConnectionState.connected.rawValue
             self.lastError = nil
+            self.addLog("Conexión BLE establecida")
             peripheral.delegate = self
             peripheral.discoverServices([self.serviceUUID])
         }
@@ -207,6 +257,9 @@ extension BLEManager: CBCentralManagerDelegate {
 
             if let error {
                 self.lastError = "Desconectado: \(error.localizedDescription)"
+                self.addLog("Desconectado con error: \(error.localizedDescription)")
+            } else {
+                self.addLog("Desconectado")
             }
 
             self.status = ConnectionState.idle.rawValue
@@ -224,6 +277,7 @@ extension BLEManager: CBCentralManagerDelegate {
             self.isBusy = false
             self.status = ConnectionState.error.rawValue
             self.lastError = error?.localizedDescription ?? "Error desconocido"
+            self.addLog("Falló conexión: \(self.lastError ?? "desconocido")")
             self.startScanIfNeeded(force: true)
         }
     }
@@ -240,6 +294,7 @@ extension BLEManager: CBPeripheralDelegate {
             }
 
             guard let services = peripheral.services else { return }
+            self.addLog("Servicios descubiertos: \(services.count)")
             for service in services where service.uuid == self.serviceUUID {
                 peripheral.discoverCharacteristics([self.commandUUID, self.stateUUID], for: service)
             }
@@ -256,6 +311,7 @@ extension BLEManager: CBPeripheralDelegate {
             }
 
             guard let chars = service.characteristics else { return }
+            self.addLog("Características descubiertas: \(chars.count)")
 
             for char in chars {
                 if char.uuid == self.commandUUID {
@@ -283,6 +339,7 @@ extension BLEManager: CBPeripheralDelegate {
 
             self.status = text
             self.isBusy = false
+            self.addLog("Estado recibido: \(text)")
         }
     }
 
@@ -293,6 +350,9 @@ extension BLEManager: CBPeripheralDelegate {
             if let error {
                 self.lastError = "Error enviando comando: \(error.localizedDescription)"
                 self.isBusy = false
+                self.addLog("Error en write BLE: \(error.localizedDescription)")
+            } else {
+                self.addLog("Comando escrito en BLE correctamente")
             }
         }
     }

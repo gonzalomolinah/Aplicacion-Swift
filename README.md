@@ -9,6 +9,8 @@ App iOS (SwiftUI + CoreBluetooth) para controlar la alarma BLE de la mochila.
 - Escaneo menos frágil (no depende solo de `withServices`).
 - Detección del periférico por nombre local o UUID de servicio.
 - Feedback visual en UI: progreso, errores y botón de reconexión.
+- Panel de log en la app (eventos BLE con timestamp + limpieza manual).
+- Herramientas de desarrollo: botones `PING` y `PEDIR STATUS`.
 - Lectura inicial de característica de estado al conectar.
 
 ## Requisitos
