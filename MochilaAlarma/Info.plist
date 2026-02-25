@@ -4,18 +4,20 @@
 <dict>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-    
+
+	<key>CFBundleName</key>
+	<string>MochilaAlarma</string>
+
+	<key>CFBundleDisplayName</key>
+	<string>MochilaAlarma</string>
+
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Bluetooth para conectarse al dispositivo</string>
-    
-    <key>CFBundleName</key>
-    <string>MochilaAlarma</string>
-    
-    <key>CFBundleDisplayName</key>
-    <string>MochilaAlarma</string>
-	
-    <key>CFBundleExecutable</key>
-    <string>$(EXECUTABLE_NAME)</string>
-    
+	<string>Se usa Bluetooth para conectarse a la alarma de mochila.</string>
+
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Se usa Bluetooth para comunicarse con el dispositivo de alarma.</string>
 </dict>
 </plist>
